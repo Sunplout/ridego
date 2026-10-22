@@ -169,7 +169,7 @@ form.addEventListener('submit',async e=>{
  try{
    const payload={name:'RideGo — formularz zapytania',_subject:`RideGo — ${serviceNames[service]} — ${val('date')} ${val('time')}`,message:summaryText,_honey:''};
    if(val('email'))payload._replyto=val('email');
-   const response=await fetch('https://formsubmit.co/ajax/konradkontakt95@gmail.com',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(payload)});
+   const response=await fetch('https://formspree.io/f/xyeeglkz',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(payload)});
    let data={};try{data=await response.json();}catch{}
    if(!response.ok||data.success===false||data.success==='false')throw new Error(data.message||data.error||`Usługa pocztowa zwróciła błąd (${response.status}).`);
    $('resultTitle').textContent='Zapytanie przekazane do usługi pocztowej';$('resultText').textContent='Usługa przyjęła żądanie. Jeśli to pierwsze wysłanie z tej strony, musisz potwierdzić adres konradkontakt95@gmail.com w wiadomości aktywacyjnej od FormSubmit. Dopóki tego nie zrobisz, nie zakładaj, że kolejne zapytania będą dostarczane.';

@@ -110,29 +110,41 @@ async function geocode(query){
  }catch(e){throw new Error(e.name==='AbortError'?'Wyszukiwanie adresu trwa zbyt długo. Możesz wpisać pełny adres i nacisnąć „Oblicz trasę i km”.':'Podpowiedzi adresów są chwilowo niedostępne. Wpisz pełny adres i użyj „Oblicz trasę i km”.');}
  finally{clearTimeout(timer);}
 }
-async function geocodeFallbackOnce(query){
- // Nominatim is used only for an explicit route calculation, not for live autocomplete.
+async function geocodeFallbackList(query){
+ // Zapasowe podpowiedzi adresów przez Nominatim, gdy Photon nie działa.
  const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),10000);
  try{
-  const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&countrycodes=pl&q=${encodeURIComponent(query)}`;
+  const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&countrycodes=pl&q=${encodeURIComponent(query)}`;
   const res=await fetch(url,{headers:{Accept:'application/json'},signal:ctl.signal});
   if(!res.ok)throw new Error('Zapasowa usługa adresów zwróciła błąd.');
   const data=await res.json();
-  if(!Array.isArray(data)||!data.length)throw new Error(`Nie znaleziono adresu „${query}”. Dodaj ulicę, numer budynku i miejscowość.`);
-  return {display_name:data[0].display_name||query,lat:Number(data[0].lat),lon:Number(data[0].lon)};
- }catch(e){if(e.name==='AbortError')throw new Error('Zapasowe wyszukiwanie adresu trwa zbyt długo. Spróbuj ponownie.');throw e;}
+  return (Array.isArray(data)?data:[]).map(x=>({display_name:x.display_name||query,lat:Number(x.lat),lon:Number(x.lon)})).filter(x=>Number.isFinite(x.lat)&&Number.isFinite(x.lon));
+ }catch(e){if(e.name==='AbortError')throw new Error('Zapasowe wyszukiwanie adresu trwa zbyt długo.');throw e;}
  finally{clearTimeout(timer);}
+}
+async function geocodeFallbackOnce(query){
+ const list=await geocodeFallbackList(query);
+ if(!list.length)throw new Error(`Nie znaleziono adresu „${query}”. Dodaj ulicę, numer budynku i miejscowość.`);
+ return list[0];
 }
 Object.entries(address).forEach(([field,cfg])=>{
  let timer;cfg.input.addEventListener('input',()=>{
   route[field]=null;route.distanceKm=null;route.durationMin=null;clearTimeout(timer);clearBox(cfg.box);
   const q=cfg.input.value.trim();if(q.length<4||(field==='destination'&&service==='shop'))return;
   timer=setTimeout(async()=>{
-   try{const list=await geocode(q);if(cfg.input.value.trim()!==q)return;cfg.box.replaceChildren();
-    list.forEach(item=>{const b=document.createElement('button');b.type='button';b.textContent=item.display_name;b.addEventListener('click',()=>setAddress(field,item.display_name,item.lat,item.lon));cfg.box.appendChild(b);});
-    if(!list.length){const p=document.createElement('div');p.textContent='Nie znaleziono adresu. Wpisz pełniejszą nazwę.';p.style.padding='11px';cfg.box.appendChild(p);}
-    cfg.box.hidden=false;
-   }catch{if(cfg.input.value.trim()!==q)return;const p=document.createElement('div');p.textContent='Podpowiedzi chwilowo niedostępne. Wpisz pełny adres i naciśnij „Oblicz trasę i km”.';p.style.padding='11px';cfg.box.replaceChildren(p);cfg.box.hidden=false;}
+   if(cfg.input.value.trim()!==q)return;
+   let list=[],primaryFailed=false;
+   try{list=await geocode(q);}catch{primaryFailed=true;}
+   if(cfg.input.value.trim()!==q)return;
+   // Jeśli Photon zwróci błąd LUB pustą listę, próbujemy drugiego dostawcy.
+   if(primaryFailed||!list.length){
+    try{list=await geocodeFallbackList(q);}catch{list=[];}
+   }
+   if(cfg.input.value.trim()!==q)return;
+   cfg.box.replaceChildren();
+   list.forEach(item=>{const b=document.createElement('button');b.type='button';b.textContent=item.display_name;b.addEventListener('click',()=>setAddress(field,item.display_name,item.lat,item.lon));cfg.box.appendChild(b);});
+   if(!list.length){const p=document.createElement('div');p.textContent='Nie udało się pobrać podpowiedzi. Możesz wpisać pełny adres i nacisnąć „Oblicz trasę i km”.';p.style.padding='11px';cfg.box.appendChild(p);}
+   cfg.box.hidden=false;
   },1100);
  });
  cfg.input.addEventListener('keydown',e=>{if(e.key==='Escape')clearBox(cfg.box);});
